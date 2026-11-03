@@ -71,7 +71,7 @@ button:focus-visible{outline:3px solid var(--led);outline-offset:2px}
     <p>Al Muin Robotics Institute</p>
     <p class="m">মাদরাসাতুর রশীদ আল ইসলামিয়্যাহ, ঢাকা</p>
     <button class="k stop" data-c="S" type="button">STOP</button>
-    <div class="foot">Created by RoboTech Solution</div>
+    <div class="foot">Created by RoboTech Solution · v2</div>
   </div>
   <div class="col right">
     <button class="k" data-c="L" aria-label="Left">◀</button>
@@ -88,18 +88,23 @@ async function wr(c){
   if(ch.properties.writeWithoutResponse)await ch.writeValueWithoutResponse(d);
   else await ch.writeValue(d);
 }
+var hbt=null;
 async function pump(){
   if(busy)return;
   busy=true;
   try{
-    while(ch&&(oneq.length||want!==sent||rep>0)){
-      if(oneq.length){await wr(oneq.shift());continue;}
-      var c=want;
-      if(want===sent)rep--;
-      await wr(c);sent=c;
+    while(ch&&(want!==sent||rep>0||oneq.length)){
+      if(want!==sent||rep>0){
+        var c=want;
+        if(want===sent)rep--;
+        await wr(c);sent=c;
+      }else{await wr(oneq.shift());}
     }
   }catch(e){console.log(e);}
   busy=false;
+  if(ch&&want!=='S'&&!hbt){
+    hbt=setTimeout(function(){hbt=null;if(ch&&want!=='S'){sent=null;pump();}},150);
+  }
 }
 function grp(c){return /[1-9]/.test(c)?'s':(c==='W'||c==='w')?'f':(c==='U'||c==='u')?'b':'';}
 function one(c){
@@ -107,7 +112,7 @@ function one(c){
   if(g)oneq=oneq.filter(function(x){return grp(x)!==g;});
   oneq.push(c);pump();
 }
-function send(c){want=c;rep=(c==='S')?2:0;pump();}
+function send(c){want=c;rep=(c==='S')?1:0;pump();}
 async function connect(){
   if(!navigator.bluetooth){setSt('Bluetooth not supported. Open in Chrome on Android.',false);return;}
   try{
@@ -137,14 +142,30 @@ async function connect(){
 cb.addEventListener('click',function(){
   if(dev&&dev.gatt&&dev.gatt.connected){dev.gatt.disconnect();}else{connect();}
 });
+var held={F:false,B:false,L:false,R:false};
+var MAP={'':'S','F':'F','B':'B','L':'L','R':'R','FL':'Q','FR':'E','BL':'Z','BR':'C'};
+function calc(){
+  var t=(held.F!==held.B)?(held.F?'F':'B'):'';
+  var s=(held.L!==held.R)?(held.L?'L':'R'):'';
+  return MAP[t+s];
+}
+function clearHeld(){
+  held.F=held.B=held.L=held.R=false;
+  document.querySelectorAll('.k').forEach(function(x){x.classList.remove('on');});
+}
 document.querySelectorAll('.k').forEach(function(b){
   var c=b.dataset.c;
   b.addEventListener('pointerdown',function(e){
     e.preventDefault();
     try{b.setPointerCapture(e.pointerId);}catch(_){}
-    b.classList.add('on');send(c);
+    if(c==='S'){clearHeld();b.classList.add('on');send('S');return;}
+    held[c]=true;b.classList.add('on');send(calc());
   });
-  function up(){b.classList.remove('on');if(c!=='S')send('S');}
+  function up(){
+    b.classList.remove('on');
+    if(c==='S')return;
+    held[c]=false;send(calc());
+  }
   b.addEventListener('pointerup',up);
   b.addEventListener('pointercancel',up);
   b.addEventListener('contextmenu',function(e){e.preventDefault();});
@@ -164,15 +185,16 @@ hb.addEventListener('pointerup',hup);
 hb.addEventListener('pointercancel',hup);
 hb.addEventListener('contextmenu',function(e){e.preventDefault();});
 var keys={ArrowUp:'F',w:'F',ArrowDown:'B',s:'B',ArrowLeft:'L',a:'L',ArrowRight:'R',d:'R',' ':'S'};
-var down=null;
 addEventListener('keydown',function(e){
   var c=keys[e.key];
   if(!c||e.repeat)return;
-  down=c;send(c);
+  if(c==='S'){clearHeld();send('S');return;}
+  held[c]=true;send(calc());
 });
 addEventListener('keyup',function(e){
   var c=keys[e.key];
-  if(c&&c!=='S'&&down===c){down=null;send('S');}
+  if(!c||c==='S')return;
+  held[c]=false;send(calc());
 });
 if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
 </script>
